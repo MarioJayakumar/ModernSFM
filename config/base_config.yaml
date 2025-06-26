@@ -1,0 +1,55 @@
+# Base configuration for Modern SfM Pipeline
+defaults:
+  - _self_
+
+# Device configuration
+device: cuda
+precision: float32
+
+# Feature extraction
+feature_extractor:
+  type: "lightglue"  # Options: lightglue, loftr, disk
+  max_keypoints: 2048
+  detection_threshold: 0.005
+  nms_radius: 4
+
+# Feature matching
+feature_matching:
+  matcher_type: "lightglue"  # Options: lightglue, loftr, superglue
+  match_threshold: 0.2
+  max_matches: 1000
+  cross_check: true
+
+# Pose estimation
+pose_estimation:
+  method: "colmap"  # Options: colmap, essential_matrix, pnp
+  ransac:
+    confidence: 0.9999
+    max_iterations: 10000
+    threshold: 1.0
+
+# Bundle adjustment
+bundle_adjustment:
+  max_iterations: 100
+  function_tolerance: 1e-6
+  gradient_tolerance: 1e-10
+  parameter_tolerance: 1e-8
+
+# Reconstruction
+reconstruction:
+  min_triangulation_angle: 2.0  # degrees
+  max_reprojection_error: 4.0   # pixels
+  min_track_length: 2
+  max_track_length: 50
+
+# Visualization
+visualization:
+  point_size: 2.0
+  camera_size: 0.1
+  save_intermediate: true
+
+# I/O
+io:
+  image_extensions: [".jpg", ".jpeg", ".png", ".tiff", ".bmp"]
+  max_image_size: 1024
+  output_format: "ply"  # Options: ply, obj, colmap
