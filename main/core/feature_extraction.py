@@ -65,7 +65,7 @@ class FeatureExtractor:
         max_size = self.config.io.max_image_size
         if max(image.shape[-2:]) > max_size:
             scale = max_size / max(image.shape[-2:])
-            new_size = (int(image.shape[-1] * scale), int(image.shape[-2] * scale))
+            new_size = (int(image.shape[-2] * scale), int(image.shape[-1] * scale))
             image = torch.nn.functional.interpolate(
                 image.unsqueeze(0), size=new_size, mode='bilinear', align_corners=False
             ).squeeze(0)
@@ -158,20 +158,21 @@ class FeatureExtractor:
         Returns:
             Image with features drawn
         """
-        # Load image
+        # Load image at original size
         image = cv2.imread(str(image_path))
         if image is None:
             raise ValueError(f"Could not load image: {image_path}")
         
-        # Resize to match feature extraction
+        # Calculate scale factor used during preprocessing
         max_size = self.config.io.max_image_size
-        if max(image.shape[:2]) > max_size:
-            scale = max_size / max(image.shape[:2])
-            new_size = (int(image.shape[1] * scale), int(image.shape[0] * scale))
-            image = cv2.resize(image, new_size)
+        original_max_dim = max(image.shape[:2])
+        scale_factor = 1.0
         
-        # Draw keypoints
-        keypoints = features['keypoints']
+        if original_max_dim > max_size:
+            scale_factor = original_max_dim / max_size
+        
+        # Scale up keypoints to original image coordinates
+        keypoints = features['keypoints'] * scale_factor
         scores = features.get('scores', np.ones(len(keypoints)))
         
         for i, (kp, score) in enumerate(zip(keypoints, scores)):
