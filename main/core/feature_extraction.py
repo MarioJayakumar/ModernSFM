@@ -6,7 +6,7 @@ import torch
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Tuple, Optional, Union, Sequence
 import logging
 from tqdm import tqdm
 
