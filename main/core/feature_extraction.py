@@ -193,6 +193,11 @@ class FeatureExtractor:
         return image
 
 
+def create_feature_extractor(config):
+    """Factory function to create feature extractor."""
+    return FeatureExtractor(config)
+
+
 def load_images_from_directory(directory: Union[str, Path], 
                              extensions: Optional[List[str]] = None) -> List[Path]:
     """
