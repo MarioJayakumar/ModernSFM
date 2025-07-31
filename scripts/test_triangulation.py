@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 import logging
 import os
+import json
 
 import hydra
 from omegaconf import DictConfig
@@ -406,6 +407,145 @@ def test_track_creation(cfg):
         return False
 
 
+def save_triangulation_results(cfg):
+    """Save triangulation results to files that can be visualized."""
+    logger.info("=== Saving Triangulation Results ===")
+    
+    try:
+        triangulator = create_triangulator(cfg)
+        data = create_synthetic_data()
+        
+        # Triangulate points
+        result = triangulator.triangulate_two_view(
+            data['points_2d_1'],
+            data['points_2d_2'],
+            data['P1'],
+            data['P2'],
+            method='dlt'
+        )
+        
+        if result['points_3d'] is None:
+            logger.warning("No triangulation results to save")
+            return
+        
+        points_3d_est = result['points_3d']
+        valid_mask = result['valid_mask']
+        
+        # Create output directory
+        output_dir = Path("outputs/triangulation_results")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Filter to valid points only
+        if valid_mask is not None and np.any(valid_mask):
+            valid_points = points_3d_est[valid_mask]
+            valid_errors = result['reprojection_errors'][valid_mask]
+            
+            # Create colors based on reprojection errors (green=good, red=bad)
+            max_error = np.percentile(valid_errors, 95)
+            if max_error == 0:
+                max_error = 1.0
+            normalized_errors = np.clip(valid_errors / max_error, 0, 1)
+            
+            colors = np.zeros((len(valid_points), 3))
+            colors[:, 0] = normalized_errors  # Red channel
+            colors[:, 1] = 1 - normalized_errors  # Green channel
+            colors[:, 2] = 0.2  # Small blue component
+            
+            # Save as PLY file
+            ply_path = output_dir / "triangulated_points.ply"
+            with open(ply_path, 'w') as f:
+                f.write("ply\n")
+                f.write("format ascii 1.0\n")
+                f.write(f"element vertex {len(valid_points)}\n")
+                f.write("property float x\n")
+                f.write("property float y\n")
+                f.write("property float z\n")
+                f.write("property uchar red\n")
+                f.write("property uchar green\n")
+                f.write("property uchar blue\n")
+                f.write("end_header\n")
+                
+                for i, (point, color) in enumerate(zip(valid_points, colors)):
+                    r, g, b = (color * 255).astype(int)
+                    f.write(f"{point[0]:.6f} {point[1]:.6f} {point[2]:.6f} {r} {g} {b}\n")
+            
+            # Save as numpy array
+            npy_path = output_dir / "triangulated_points.npy"
+            data_with_colors = np.hstack([valid_points, colors])
+            np.save(npy_path, data_with_colors)
+            
+            # Save as text file
+            txt_path = output_dir / "triangulated_points.txt"
+            np.savetxt(txt_path, data_with_colors, fmt='%.6f', 
+                      header='x y z r g b (colors based on reprojection error)')
+            
+            # Save as JSON
+            json_path = output_dir / "triangulated_points.json"
+            json_data = {
+                'points_3d': valid_points.tolist(),
+                'colors': colors.tolist(),
+                'reprojection_errors': valid_errors.tolist(),
+                'triangulation_angles': result['triangulation_angles'][valid_mask].tolist(),
+                'method_used': result['method_used'],
+                'total_points': len(points_3d_est),
+                'valid_points': len(valid_points)
+            }
+            
+            with open(json_path, 'w') as f:
+                json.dump(json_data, f, indent=2)
+            
+            # Save camera poses
+            camera_poses_path = output_dir / "camera_poses.json"
+            camera_poses = {
+                '0': {
+                    'projection_matrix': data['P1'].tolist(),
+                    'intrinsics': data['K'].tolist()
+                },
+                '1': {
+                    'projection_matrix': data['P2'].tolist(),
+                    'intrinsics': data['K'].tolist()
+                }
+            }
+            
+            with open(camera_poses_path, 'w') as f:
+                json.dump(camera_poses, f, indent=2)
+            
+            logger.info(f"✓ Saved triangulation results:")
+            logger.info(f"  PLY file: {ply_path}")
+            logger.info(f"  NPY file: {npy_path}")
+            logger.info(f"  TXT file: {txt_path}")
+            logger.info(f"  JSON file: {json_path}")
+            logger.info(f"  Camera poses: {camera_poses_path}")
+            logger.info(f"  Valid points: {len(valid_points)}/{len(points_3d_est)}")
+            
+            # Show how to visualize the results
+            logger.info("\n" + "=" * 50)
+            logger.info("TO VISUALIZE THESE RESULTS:")
+            logger.info("=" * 50)
+            logger.info("# View PLY file (auto-detect best method for your SSH setup)")
+            logger.info(f"python scripts/view_results.py {ply_path}")
+            logger.info("")
+            logger.info("# Quick terminal preview")
+            logger.info(f"python scripts/view_results.py {ply_path} --method terminal")
+            logger.info("")
+            logger.info("# Export method (creates files you can download)")
+            logger.info(f"python scripts/view_results.py {ply_path} --method export")
+            logger.info("")
+            logger.info("# View numpy array")
+            logger.info(f"python scripts/view_results.py {npy_path}")
+            logger.info("")
+            logger.info("# View JSON data")
+            logger.info(f"python scripts/view_results.py {json_path}")
+            
+        else:
+            logger.warning("No valid triangulated points to save")
+        
+    except Exception as e:
+        logger.error(f"Failed to save triangulation results: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def visualize_triangulation_results(cfg):
     """Create visualization of triangulation results."""
     logger.info("=== Creating Triangulation Visualization ===")
@@ -525,6 +665,9 @@ def test_triangulation(cfg: DictConfig) -> None:
         # Test track creation
         result4 = test_track_creation(cfg)
         test_results.append(("Track creation", result4))
+        
+        # Save triangulation results to files
+        save_triangulation_results(cfg)
         
         # Create visualization
         visualize_triangulation_results(cfg)
