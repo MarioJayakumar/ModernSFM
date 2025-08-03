@@ -266,3 +266,106 @@ Successfully implemented a comprehensive 3D visualization solution specifically 
 - **Extensible architecture**: Ready for future mesh visualization and advanced features
 
 This visualization system provides a complete solution for viewing 3D reconstruction results over SSH connections. The multi-modal approach ensures compatibility with various SSH configurations while maintaining full 3D manipulation capabilities. The system integrates seamlessly with the existing triangulation pipeline and provides a solid foundation for future visualization enhancements including mesh support and advanced rendering features.
+
+## August 2nd, 2025
+
+**Enhanced Debugging Visualization and Feature Extraction Consistency**
+
+Successfully implemented comprehensive debugging improvements to address discrepancies between feature extraction and feature matching visualizations, and enhanced the debugging capabilities for better intermediate step analysis.
+
+### Problem Analysis:
+- **Inconsistent keypoint visualization**: Feature extraction test showed excellent keypoint detection, but feature matching visualization showed significantly fewer keypoints
+- **Poor debugging visibility**: Matched pairs were visualized in isolation without context of all detected keypoints
+- **Configuration issues**: Extremely low match threshold (0.001) was causing poor quality matches
+- **Visualization limitations**: Default parameters were limiting keypoint display to only 500 per image
+
+### Core Improvements Implemented:
+
+#### 1. **Enhanced Match Visualization with Full Context**:
+- **New method**: `visualize_matches_with_all_keypoints()` in FeatureMatcher class
+- **Layered visualization approach**:
+  - **Step 1**: Draw ALL detected keypoints in subtle gray (intensity based on keypoint score)
+  - **Step 2**: Draw matched keypoints in bright colors with confidence-based coloring
+  - **Step 3**: Draw match lines connecting pairs with thicker, colored lines
+  - **Step 4**: Add comprehensive text info and legend
+- **Enhanced debugging information**: Shows total keypoints, matches, geometric filter results, and spatial distribution stats
+
+#### 2. **Fixed Configuration Issues**:
+- **Corrected match threshold**: Changed from 0.001 → 0.15 for balanced quality vs quantity
+- **Maintained enhanced feature extraction**: Confirmed all multi-scale and spatial distribution features are active
+- **Verified feature pipeline**: Both `test_feature_extraction.py` and `test_feature_matching.py` use the same enhanced extraction methods
+
+#### 3. **Improved Visualization Parameters**:
+- **Increased keypoint display limits**: From 500 → 2000 keypoints per image in enhanced visualizations
+- **More matches shown**: Up to 200 matches displayed instead of default 100
+- **Better visual hierarchy**: 
+  - Unmatched keypoints: Small gray circles (2px radius)
+  - Matched keypoints: Large bright circles (4px radius) with white borders (5px)
+  - Match lines: Thick colored lines (2px width)
+
+#### 4. **Comprehensive Debugging Output**:
+- **Multiple visualization types**: Standard matches, enhanced matches with all keypoints, spatial distribution comparisons
+- **Detailed logging**: Feature counts, extraction types, spatial distribution statistics
+- **Legend and annotations**: Clear visual guide showing different keypoint types and color coding
+
+### Technical Implementation Details:
+
+#### **Enhanced Visualization Architecture**:
+```python
+# Three-layer visualization approach:
+# 1. All keypoints in gray (context)
+# 2. Matched keypoints in bright colors (focus)  
+# 3. Match lines with confidence coloring (connections)
+
+# Color coding:
+# - Gray keypoints: intensity = 100 + 100 * keypoint_score
+# - Matched keypoints: green=high confidence, red=low confidence
+# - White borders around matched keypoints for visibility
+```
+
+#### **Debugging Information Display**:
+```python
+info_lines = [
+    f"Total keypoints: {len(all_kpts1)} | {len(all_kpts2)}",
+    f"Matches: {matches['num_matches']} | {matches['matcher_type']}",
+    f"Filter: {matches['geometric_filter']}",
+    f"Inlier ratio: {matches['inlier_ratio']:.3f}",
+    f"Spatial: {matches['spatial_distribution']}"
+]
+```
+
+#### **Configuration Corrections**:
+```yaml
+# Fixed match threshold for better quality
+match_threshold: 0.15  # Was 0.001 (too permissive)
+
+# Enhanced visualization parameters
+max_keypoints_per_image: 2000  # Was 500 (too limiting)
+max_matches: 200  # Was 100 (too few for debugging)
+```
+
+### Architecture Benefits:
+- **Complete debugging visibility**: See exactly which keypoints are matched vs ignored
+- **Quality assessment**: Easy identification of good vs poor matches through color coding
+- **Spatial analysis**: Visual confirmation of spatial distribution effectiveness
+- **Configuration validation**: Immediate feedback on parameter tuning effects
+- **Consistent extraction**: Verified that both test scripts use identical enhanced feature extraction
+
+### Debugging Workflow Enhancement:
+1. **Feature extraction visualization**: Individual keypoint quality and distribution per image
+2. **Enhanced match visualization**: Matched pairs overlaid on all detected keypoints
+3. **Spatial distribution comparison**: Before/after spatial filtering effects
+4. **Standard visualization**: Clean match-only view for final results
+
+### Expected Debugging Improvements:
+- **Clear problem identification**: Immediately see if issues are in extraction, matching, or filtering
+- **Parameter tuning guidance**: Visual feedback for threshold and spatial distribution adjustments
+- **Quality validation**: Easy assessment of match quality and spatial coverage
+- **Comprehensive context**: Full picture of feature pipeline performance at each stage
+
+### Files Modified:
+- `main/core/feature_matching.py` - Added `visualize_matches_with_all_keypoints()` method
+- `scripts/test_feature_matching.py` - Updated to use enhanced visualization with higher limits
+- `config/base_config.yaml` - Fixed match threshold from 0.001 to 0.15
+
+This enhancement provides comprehensive debugging visibility into the feature matching pipeline, allowing for easy identification of issues and validation of improvements. The layered visualization approach gives complete context while highlighting the most important information (matched pairs) for effective debugging and parameter tuning.

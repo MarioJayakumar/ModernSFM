@@ -9,16 +9,29 @@ precision: float32
 # Feature extraction
 feature_extractor:
   type: "lightglue"  # Options: lightglue, loftr, disk
-  max_keypoints: 2048
-  detection_threshold: 0.005
-  nms_radius: 4
+  max_keypoints: 8192  # Increased for more features before spatial filtering
+  detection_threshold: 0.01  # Very sensitive detection to get more candidates
+  nms_radius: 2  # Reduced NMS radius to allow more features
+  # Multi-scale feature extraction parameters
+  multi_scale: true
+  scales: [1.0, 0.8, 0.6]  # Closer scales for better coverage
+  # Spatial distribution parameters
+  spatial_grid: 16  # 16x16 grid for finer spatial control
+  features_per_cell: 32  # Fewer per cell but more cells = better distribution
+  # Force spatial distribution even with fewer features
+  min_features_per_cell: 8  # Minimum features per cell
+  enforce_spatial_distribution: true  # Always apply spatial filtering
 
 # Feature matching
 feature_matching:
   matcher_type: "lightglue"  # Options: lightglue, loftr, superglue
-  match_threshold: 0.2
-  max_matches: 1000
+  match_threshold: 0.30  # Balanced threshold for quality vs quantity
+  max_matches: 3000  # More matches for better coverage
   cross_check: true
+  # Enhanced filtering parameters
+  confidence_weighted_filtering: true  # Use confidence in geometric filtering
+  multi_model_ransac: true  # Try both fundamental matrix and homography
+  adaptive_thresholds: true  # Adapt RANSAC thresholds based on match quality
 
 # Pose estimation
 pose_estimation:
