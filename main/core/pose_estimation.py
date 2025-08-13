@@ -125,28 +125,57 @@ class PoseEstimator:
                             K1: np.ndarray,
                             K2: np.ndarray) -> Dict:
         """Estimate pose using COLMAP's robust solvers."""
-        # Normalize points to camera coordinates
-        points1_norm = self._normalize_points(points1, K1)
-        points2_norm = self._normalize_points(points2, K2)
-        
-        # COLMAP essential matrix estimation
-        ransac_options = {
-            'max_error': self.ransac_threshold / max(K1[0, 0], K1[1, 1]),  # Normalize threshold
-            'confidence': self.ransac_confidence,
-            'max_num_trials': self.ransac_max_iters,
-            'min_inlier_ratio': 0.1
-        }
-        
-        # Estimate essential matrix
-        result = pycolmap.essential_matrix_estimation(
-            points1_norm, points2_norm, ransac_options
-        )
-        
-        if result is None or 'E' not in result:
+        try:
+            # Convert points to correct format for COLMAP
+            points1 = points1.astype(np.float64)
+            points2 = points2.astype(np.float64)
+            
+            # Create COLMAP camera objects
+            # Assume SIMPLE_RADIAL camera model with focal length from K matrix
+            fx1, fy1 = K1[0, 0], K1[1, 1]
+            cx1, cy1 = K1[0, 2], K1[1, 2]
+            fx2, fy2 = K2[0, 0], K2[1, 1]
+            cx2, cy2 = K2[0, 2], K2[1, 2]
+            
+            # Create camera objects using the new COLMAP API
+            camera1 = pycolmap.Camera(
+                model='SIMPLE_PINHOLE',
+                width=int(2 * cx1),  # Estimate image width
+                height=int(2 * cy1), # Estimate image height  
+                params=[fx1, cx1, cy1]
+            )
+            camera2 = pycolmap.Camera(
+                model='SIMPLE_PINHOLE',
+                width=int(2 * cx2),
+                height=int(2 * cy2),
+                params=[fx2, cx2, cy2]
+            )
+            
+            # COLMAP RANSAC options
+            ransac_options = pycolmap.RANSACOptions()
+            ransac_options.max_error = self.ransac_threshold
+            ransac_options.confidence = self.ransac_confidence
+            ransac_options.max_num_trials = self.ransac_max_iters
+            ransac_options.min_inlier_ratio = 0.1
+            
+            # Estimate essential matrix using new API
+            result = pycolmap.estimate_essential_matrix(
+                points1, points2, camera1, camera2, ransac_options
+            )
+            
+            if result is None or 'E' not in result:
+                return {'success': False}
+            
+            E = result['E']
+            inlier_mask = result.get('inliers', np.ones(len(points1), dtype=bool))
+            
+            # Normalize points for pose recovery
+            points1_norm = self._normalize_points(points1, K1)
+            points2_norm = self._normalize_points(points2, K2)
+            
+        except Exception as e:
+            logging.warning(f"COLMAP pose estimation error: {e}, falling back to OpenCV")
             return {'success': False}
-        
-        E = result['E']
-        inlier_mask = result.get('inliers', np.ones(len(points1), dtype=bool))
         
         # Recover pose from essential matrix
         R, t, pose_inliers = self._recover_pose_from_essential(
