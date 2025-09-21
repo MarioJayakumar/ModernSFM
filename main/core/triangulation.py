@@ -531,9 +531,19 @@ class Triangulator:
         
         # Filter points too far from origin (likely outliers)
         distances = np.linalg.norm(points_3d, axis=1)
-        median_distance = np.median(distances[valid_mask]) if np.any(valid_mask) else 1.0
-        max_distance = median_distance * 100  # Allow up to 100x median distance
-        valid_mask &= distances < max_distance
+        # Only filter if we have enough valid points to compute robust statistics
+        if np.sum(valid_mask) > 10:
+            median_distance = np.median(distances[valid_mask])
+            # Use IQR-based outlier detection instead of fixed multiplier
+            q75 = np.percentile(distances[valid_mask], 75)
+            q25 = np.percentile(distances[valid_mask], 25)
+            iqr = q75 - q25
+            max_distance = q75 + 3 * iqr  # More robust outlier threshold
+            valid_mask &= distances < max_distance
+        else:
+            # If too few points, use a generous distance threshold
+            max_distance = 1000.0  # 1000 units from origin
+            valid_mask &= distances < max_distance
         
         return valid_mask
     

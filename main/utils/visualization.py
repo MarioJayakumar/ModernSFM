@@ -277,7 +277,7 @@ class SfMVisualizer:
                        points_3d: np.ndarray,
                        colors: Optional[np.ndarray],
                        camera_poses: Optional[Dict[int, np.ndarray]],
-                       title: str) -> str:
+                       title: str) -> List[str]:
         """Export point cloud to standard 3D formats."""
         
         base_name = title.lower().replace(' ', '_')
@@ -305,7 +305,7 @@ class SfMVisualizer:
         # Provide viewing instructions
         self._print_viewing_instructions(ply_path, obj_path, html_path)
         
-        return str(ply_path)
+        return [str(ply_path), str(obj_path), str(html_path)]
     
     def _export_ply(self, points_3d: np.ndarray, colors: Optional[np.ndarray], filename: str) -> Path:
         """Export point cloud to PLY format."""

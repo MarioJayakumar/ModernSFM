@@ -60,8 +60,8 @@ bundle_adjustment:
 
 # Reconstruction
 reconstruction:
-  min_triangulation_angle: 2.0  # degrees
-  max_reprojection_error: 4.0   # pixels
+  min_triangulation_angle: 0.5  # degrees - relaxed for close camera positions
+  max_reprojection_error: 8.0   # pixels - increased for better coverage
   min_track_length: 2
   max_track_length: 50
 
