@@ -169,13 +169,13 @@ def save_reconstruction_report(result: ReconstructionResult, output_file: Path):
                 'num_points_triangulated': result.num_points_triangulated
             },
             'quality_metrics': {
-                'mean_reprojection_error': result.mean_reprojection_error,
-                'inlier_ratio': result.inlier_ratio,
-                'reconstruction_scale': result.reconstruction_scale
+                'mean_reprojection_error': str(result.mean_reprojection_error),
+                'inlier_ratio': str(result.inlier_ratio),
+                'reconstruction_scale': str(result.reconstruction_scale)
             },
             'performance_metrics': {
-                'total_time': result.total_time,
-                'stage_times': result.stage_times
+                'total_time': str(result.total_time),
+                'stage_times': str(result.stage_times)
             },
             'output_info': {
                 'output_directory': str(result.output_directory) if result.output_directory else None,
@@ -187,12 +187,12 @@ def save_reconstruction_report(result: ReconstructionResult, output_file: Path):
         if result.bundle_adjustment_result:
             ba = result.bundle_adjustment_result
             report['bundle_adjustment'] = {
-                'initial_rmse': ba.initial_rmse,
-                'final_rmse': ba.final_rmse,
+                'initial_rmse': str(ba.initial_rmse),
+                'final_rmse': str(ba.final_rmse),
                 'num_iterations': ba.num_iterations,
                 'convergence_reason': ba.convergence_reason,
-                'inlier_ratio': ba.inlier_ratio,
-                'optimization_time': ba.optimization_time
+                'inlier_ratio': str(ba.inlier_ratio),
+                'optimization_time': str(ba.optimization_time)
             }
         
         # Save report
