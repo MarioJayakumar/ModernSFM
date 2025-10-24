@@ -114,6 +114,9 @@ class FullReconstructionPipeline:
         self.points_3d = None
         self.intrinsics = None
         
+        # Directory structure for organized output
+        self.intermediate_dir = None
+        
         logger.info(f"FullReconstructionPipeline initialized on {self.device}")
     
     def load_images(self, image_dir: Union[str, Path], max_images: Optional[int]) -> List[Path]:
@@ -185,14 +188,18 @@ class FullReconstructionPipeline:
             logger.info(f"Extracted {total_features} total features across {len(self.images)} images")
             logger.info(f"Features per image: {num_features}")
             
-            # Generate intermediate visualizations using centralized visualizer
-            self.pipeline_visualizer.visualize_pipeline_stage(
-                "features", 
-                images=self.images, 
-                features_list=self.features,
-                max_images=3,
-                max_keypoints=2000
-            )
+            # Generate intermediate visualizations only if intermediate_dir is provided
+            if self.intermediate_dir:
+                self.intermediate_dir.mkdir(exist_ok=True)
+                features_dir = self.intermediate_dir / "features"
+                features_dir.mkdir(exist_ok=True)
+                self.pipeline_visualizer.visualize_pipeline_stage(
+                    "features", 
+                    images=self.images, 
+                    features_list=self.features,
+                    max_images=3,
+                    max_keypoints=2000
+                )
             
             return {i: features for i, features in enumerate(self.features)}
             
@@ -242,14 +249,17 @@ class FullReconstructionPipeline:
             if valid_pairs < len(self.images) - 1:
                 logger.warning(f"Insufficient connectivity: only {valid_pairs} valid pairs from {len(self.images)} images")
             
-            # Generate intermediate visualizations using centralized visualizer  
-            self.pipeline_visualizer.visualize_pipeline_stage(
-                "matches",
-                images=self.images,
-                features_list=self.features, 
-                matches_dict=self.matches,
-                max_pairs=5
-            )
+            # Generate intermediate visualizations only if intermediate_dir is provided
+            if self.intermediate_dir:
+                matches_dir = self.intermediate_dir / "matches"
+                matches_dir.mkdir(exist_ok=True)
+                self.pipeline_visualizer.visualize_pipeline_stage(
+                    "matches",
+                    images=self.images,
+                    features_list=self.features, 
+                    matches_dict=self.matches,
+                    max_pairs=5
+                )
             
             return self.matches
             
@@ -499,12 +509,13 @@ class FullReconstructionPipeline:
             logger.info(f"Point triangulation completed in {triangulation_time:.2f}s")
             logger.info(f"Triangulated {len(self.points_3d)} 3D points from tracks")
             
-            # Generate intermediate visualizations using centralized visualizer
-            self.pipeline_visualizer.visualize_pipeline_stage(
-                "triangulation",
-                points_3d=self.points_3d,
-                camera_poses=self.poses
-            )
+            # Generate intermediate visualizations only if intermediate_dir is provided
+            if self.intermediate_dir:
+                self.pipeline_visualizer.visualize_pipeline_stage(
+                    "triangulation",
+                    points_3d=self.points_3d,
+                    camera_poses=self.poses
+                )
             
             return self.points_3d
             
@@ -568,38 +579,43 @@ class FullReconstructionPipeline:
             )
     
     def save_results(self, output_dir: Union[str, Path], 
-                    name: str = "reconstruction") -> List[Path]:
+                    name: str = "reconstruction",
+                    data_dir: Optional[Path] = None,
+                    viz_dir: Optional[Path] = None) -> List[Path]:
         """
-        Save reconstruction results in multiple formats.
+        Save reconstruction results in organized directory structure.
         
         Args:
-            output_dir: Directory to save results
+            output_dir: Main output directory
             name: Base name for output files
+            data_dir: Directory for core reconstruction data
+            viz_dir: Directory for visualizations
             
         Returns:
             List of paths to generated files
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Use organized directories if provided, otherwise fall back to output_dir
+        data_output_dir = data_dir if data_dir else Path(output_dir)
+        data_output_dir.mkdir(parents=True, exist_ok=True)
         
         output_files = []
         
         try:
-            # Save 3D points in multiple formats
+            # Save 3D points in multiple formats in data directory
             if self.points_3d is not None:
                 # NumPy format
-                points_npy = output_dir / f"{name}_points.npy"
+                points_npy = data_output_dir / "points_3d.npy"
                 np.save(points_npy, self.points_3d)
                 output_files.append(points_npy)
                 
                 # Text format
-                points_txt = output_dir / f"{name}_points.txt"
+                points_txt = data_output_dir / "points_3d.txt"
                 np.savetxt(points_txt, self.points_3d, fmt='%.6f')
                 output_files.append(points_txt)
             
-            # Save camera poses
+            # Save camera poses in data directory
             if self.poses:
-                poses_json = output_dir / f"{name}_poses.json"
+                poses_json = data_output_dir / "camera_poses.json"
                 poses_data = []
                 for i, pose in enumerate(self.poses):
                     poses_data.append({
@@ -612,9 +628,9 @@ class FullReconstructionPipeline:
                     json.dump(poses_data, f, indent=2)
                 output_files.append(poses_json)
             
-            # Save intrinsics
+            # Save intrinsics in data directory
             if self.intrinsics is not None:
-                intrinsics_json = output_dir / f"{name}_intrinsics.json"
+                intrinsics_json = data_output_dir / "camera_intrinsics.json"
                 with open(intrinsics_json, 'w') as f:
                     json.dump({
                         'intrinsics': self.intrinsics.tolist(),
@@ -630,20 +646,26 @@ class FullReconstructionPipeline:
             return output_files
     
     def create_visualizations(self, output_dir: Union[str, Path],
-                            name: str = "reconstruction") -> List[Path]:
+                            name: str = "reconstruction",
+                            viz_dir: Optional[Path] = None) -> List[Path]:
         """
         Create comprehensive visualizations of the reconstruction.
         
         Args:
-            output_dir: Directory to save visualizations
+            output_dir: Main output directory
             name: Base name for visualization files
+            viz_dir: Directory for visualizations (if None, creates visualizations subdir)
             
         Returns:
             List of paths to generated visualization files
         """
-        output_dir = Path(output_dir)
-        vis_dir = output_dir / "visualizations"
-        vis_dir.mkdir(parents=True, exist_ok=True)
+        # Use organized viz directory if provided, otherwise create visualizations subdir
+        if viz_dir:
+            vis_output_dir = viz_dir
+        else:
+            vis_output_dir = Path(output_dir) / "visualizations"
+        
+        vis_output_dir.mkdir(parents=True, exist_ok=True)
         
         vis_files = []
         
@@ -663,11 +685,11 @@ class FullReconstructionPipeline:
                         # Combine R and t into [3, 4] matrix format expected by visualizer
                         camera_poses_dict[i] = np.hstack([pose['R'], pose['t']])
                 
-                # Create visualization using the correct format
+                # Create visualization using the correct format  
                 vis_files = self.visualizer.visualize_reconstruction(
                     triangulation_result,
                     camera_poses_dict,
-                    title=name
+                    title="reconstruction"  # Use consistent naming
                 )
                 
                 logger.info(f"Created {len(vis_files)} visualization files")
@@ -694,14 +716,21 @@ class FullReconstructionPipeline:
     def reconstruct(self, image_dir: Union[str, Path], 
                    output_dir: Union[str, Path],
                    name: str = "reconstruction",
-                   max_images: Optional[int] = -1) -> ReconstructionResult:
+                   max_images: Optional[int] = -1,
+                   data_dir: Optional[Path] = None,
+                   viz_dir: Optional[Path] = None,
+                   intermediate_dir: Optional[Path] = None) -> ReconstructionResult:
         """
         Run the complete reconstruction pipeline.
         
         Args:
             image_dir: Directory containing input images
-            output_dir: Directory for outputs
+            output_dir: Main output directory
             name: Base name for output files
+            max_images: Maximum number of images to process
+            data_dir: Directory for core reconstruction data (points, poses, etc.)
+            viz_dir: Directory for final visualizations
+            intermediate_dir: Directory for intermediate/debug files (optional)
             
         Returns:
             ReconstructionResult with complete pipeline results
@@ -712,6 +741,9 @@ class FullReconstructionPipeline:
         
         pipeline_start = time.time()
         stage_times = {}
+        
+        # Store intermediate directory for conditional use
+        self.intermediate_dir = intermediate_dir
         
         try:
             # Stage 1: Load images
@@ -750,11 +782,11 @@ class FullReconstructionPipeline:
             ba_result = self.run_bundle_adjustment()
             stage_times['bundle_adjustment'] = time.time() - stage_start
             
-            # Save results
+            # Save results with organized directory structure
             logger.info("Saving reconstruction results...")
             stage_start = time.time()
-            output_files = self.save_results(output_dir, name)
-            vis_files = self.create_visualizations(output_dir, name)
+            output_files = self.save_results(output_dir, name, data_dir, viz_dir)
+            vis_files = self.create_visualizations(output_dir, name, viz_dir)
             stage_times['save_results'] = time.time() - stage_start
             
             total_time = time.time() - pipeline_start

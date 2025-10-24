@@ -369,3 +369,38 @@ max_matches: 200  # Was 100 (too few for debugging)
 - `config/base_config.yaml` - Fixed match threshold from 0.001 to 0.15
 
 This enhancement provides comprehensive debugging visibility into the feature matching pipeline, allowing for easy identification of issues and validation of improvements. The layered visualization approach gives complete context while highlighting the most important information (matched pairs) for effective debugging and parameter tuning.
+
+## September 21st, 2025
+
+**Output Organization Streamlining Plan**
+
+Identified and planned solution for disorganized reconstruction output structure. Current issues:
+- Keypoint/match files scattered in top-level outputs directory
+- Duplicate visualizations across multiple folders (outputs/visualizations/ + timestamped folders)
+- Confusing date-nested directory structure
+- No clear separation between core data, visualizations, and intermediate files
+
+**Proposed Clean Output Structure:**
+```
+outputs/reconstruction_name_YYYY-MM-DD_HH-MM-SS/
+├── reconstruction.log                    # Consolidated logging
+├── reconstruction_report.json            # Summary report  
+├── data/                                # Core reconstruction data
+│   ├── points_3d.{npy,txt}
+│   ├── camera_poses.json
+│   └── camera_intrinsics.json
+├── visualizations/                      # Final result visualizations only
+│   ├── reconstruction.{ply,obj}
+│   ├── reconstruction_viewer.html
+│   └── reconstruction_cameras.json
+└── intermediate/ (optional)             # Debug files controlled by --intermediate-viz
+    ├── features/features_*.jpg
+    └── matches/matches_*.jpg
+```
+
+**Implementation Steps:**
+1. Update output directory creation (remove date nesting)
+2. Implement organized subdirectory structure
+3. Add conditional intermediate file generation
+4. Consolidate visualization file management
+5. Update all pipeline components for consistent naming

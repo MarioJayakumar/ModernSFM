@@ -16,6 +16,7 @@ import logging
 import os
 import json
 from datetime import datetime
+from typing import Tuple
 from omegaconf import OmegaConf
 
 # Add the main directory to the path
@@ -31,32 +32,38 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_output_directory(base_dir: str, name: str = None) -> Path:
+def create_output_directory(base_dir: str, name: str = None) -> Tuple[Path, Path, Path, Path]:
     """
-    Create timestamped output directory following project conventions.
+    Create organized output directory structure.
     
     Args:
         base_dir: Base output directory (e.g., 'outputs')
         name: Optional name for the reconstruction
         
     Returns:
-        Path to created output directory
+        Tuple of (main_dir, data_dir, viz_dir, intermediate_dir)
     """
     base_path = Path(base_dir)
     
-    # Create date subdirectory
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    date_dir = base_path / date_str
-    
-    # Create time subdirectory  
-    time_str = datetime.now().strftime("%H-%M-%S")
+    # Create main output directory with timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if name:
-        time_dir = date_dir / f"{time_str}_{name}"
+        main_dir = base_path / f"{name}_{timestamp}"
     else:
-        time_dir = date_dir / time_str
+        main_dir = base_path / f"reconstruction_{timestamp}"
     
-    time_dir.mkdir(parents=True, exist_ok=True)
-    return time_dir
+    # Create organized subdirectories
+    data_dir = main_dir / "data"
+    viz_dir = main_dir / "visualizations" 
+    intermediate_dir = main_dir / "intermediate"
+    
+    # Create directories
+    main_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(exist_ok=True)
+    viz_dir.mkdir(exist_ok=True)
+    # intermediate_dir created only when needed
+    
+    return main_dir, data_dir, viz_dir, intermediate_dir
 
 
 def setup_logging(output_dir: Path, name: str = "reconstruction") -> Path:
@@ -251,13 +258,13 @@ Examples:
         logger.error(f"Input directory does not exist: {input_dir}")
         sys.exit(1)
     
-    # Create output directory
-    output_dir = create_output_directory(args.output, args.name)
-    logger.info(f"Output directory: {output_dir}")
+    # Create output directories
+    main_dir, data_dir, viz_dir, intermediate_dir = create_output_directory(args.output, args.name)
+    logger.info(f"Output directory: {main_dir}")
     
     # Set up file logging
     reconstruction_name = args.name or "reconstruction"
-    log_file = setup_logging(output_dir, reconstruction_name)
+    log_file = setup_logging(main_dir, reconstruction_name)
     
     # Load base configuration
     try:
@@ -295,21 +302,24 @@ Examples:
         logger.info(f"Starting reconstruction of images in: {input_dir}")
         result = pipeline.reconstruct(
             image_dir=input_dir,
-            output_dir=output_dir,
+            output_dir=main_dir,
             name=reconstruction_name,
-            max_images=args.max_images
+            max_images=args.max_images,
+            data_dir=data_dir,
+            viz_dir=viz_dir,
+            intermediate_dir=intermediate_dir if args.intermediate_viz else None
         )
         
         # Print summary
         print_summary(result)
         
         # Save detailed report
-        report_file = output_dir / f"{reconstruction_name}_report.json"
+        report_file = main_dir / f"reconstruction_report.json"
         save_reconstruction_report(result, report_file)
         
         # Success/failure exit codes
         if result.success:
-            logger.info(f"Reconstruction completed successfully! Results in: {output_dir}")
+            logger.info(f"Reconstruction completed successfully! Results in: {main_dir}")
             sys.exit(0)
         else:
             logger.error(f"Reconstruction failed: {result.error_message}")
