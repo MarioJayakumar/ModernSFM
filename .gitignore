@@ -11,10 +11,12 @@ env/
 
 # Generated outputs and logs
 outputs/
+data/
 
 # IDE files
 .vscode/
 .idea/
+CLAUDE.md
 
 # OS files
 .DS_Store

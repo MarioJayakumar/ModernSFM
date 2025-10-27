@@ -72,17 +72,21 @@ class PoseEstimator:
                 - method_used: str method that was successful
                 - success: bool whether estimation succeeded
         """
-        result = {
-            'R': None,
-            't': None,
-            'essential_matrix': None,
-            'fundamental_matrix': None,
-            'inlier_mask': None,
-            'num_inliers': 0,
-            'inlier_ratio': 0.0,
-            'method_used': 'none',
-            'success': False
-        }
+        def _empty_result():
+            return {
+                'R': None,
+                't': None,
+                'essential_matrix': None,
+                'fundamental_matrix': None,
+                'inlier_mask': None,
+                'num_inliers': 0,
+                'inlier_ratio': 0.0,
+                'method_used': 'none',
+                'success': False
+            }
+
+        candidate_results = []
+        min_inliers = self.pose_config.get('min_inliers', 0)
         
         if len(points1) < 8:
             logging.warning(f"Insufficient correspondences: {len(points1)} < 8")
@@ -95,29 +99,46 @@ class PoseEstimator:
         if use_method == 'colmap' and COLMAP_AVAILABLE:
             try:
                 colmap_result = self._estimate_pose_colmap(points1, points2, K1, K2)
-                if colmap_result['success']:
-                    result.update(colmap_result)
-                    result['method_used'] = 'colmap'
-                    logging.info(f"COLMAP pose estimation successful: {result['num_inliers']}/{len(points1)} inliers")
-                    return result
+                if colmap_result['success'] and colmap_result['num_inliers'] >= min_inliers:
+                    colmap_result['method_used'] = 'colmap'
+                    candidate_results.append(colmap_result)
+                    logging.info(f"COLMAP pose estimation successful: {colmap_result['num_inliers']}/{len(points1)} inliers")
                 else:
-                    logging.warning("COLMAP pose estimation failed, falling back to OpenCV")
+                    logging.info(
+                        "COLMAP pose estimation discarded: %s",
+                        "insufficient inliers" if colmap_result.get('success') else "failure"
+                    )
             except Exception as e:
                 logging.warning(f"COLMAP pose estimation error: {e}, falling back to OpenCV")
         
         # Try OpenCV method
         try:
             opencv_result = self._estimate_pose_opencv(points1, points2, K1, K2)
-            if opencv_result['success']:
-                result.update(opencv_result)
-                result['method_used'] = 'opencv'
-                logging.info(f"OpenCV pose estimation successful: {result['num_inliers']}/{len(points1)} inliers")
-                return result
+            if opencv_result['success'] and opencv_result['num_inliers'] >= min_inliers:
+                opencv_result['method_used'] = 'opencv'
+                candidate_results.append(opencv_result)
+                logging.info(f"OpenCV pose estimation successful: {opencv_result['num_inliers']}/{len(points1)} inliers")
+            else:
+                logging.info(
+                    "OpenCV pose estimation discarded: %s",
+                    "insufficient inliers" if opencv_result.get('success') else "failure"
+                )
         except Exception as e:
             logging.error(f"OpenCV pose estimation failed: {e}")
+
+        if candidate_results:
+            def _score(result: Dict) -> Tuple[float, int, int]:
+                return (
+                    result.get('rotation_angle_deg', 0.0),
+                    result.get('positive_depth_count', 0),
+                    result.get('num_inliers', 0)
+                )
+            
+            best = max(candidate_results, key=_score)
+            return best
         
         logging.error("All pose estimation methods failed")
-        return result
+        return _empty_result()
     
     def _estimate_pose_colmap(self,
                             points1: np.ndarray,
@@ -192,6 +213,9 @@ class PoseEstimator:
         # Compute fundamental matrix
         F = self._essential_to_fundamental(E, K1, K2)
         
+        positive_count = int(pose_inliers.astype(bool).sum())
+        rotation_angle = self._rotation_angle_degrees(R)
+
         return {
             'R': R,
             't': t,
@@ -200,7 +224,9 @@ class PoseEstimator:
             'inlier_mask': final_inliers,
             'num_inliers': np.sum(final_inliers),
             'inlier_ratio': np.sum(final_inliers) / len(points1),
-            'success': True
+            'success': True,
+            'positive_depth_count': positive_count,
+            'rotation_angle_deg': rotation_angle
         }
     
     def _estimate_pose_opencv(self,
@@ -238,6 +264,9 @@ class PoseEstimator:
         
         # Compute fundamental matrix
         F = self._essential_to_fundamental(E, K1, K2)
+
+        positive_count = int(pose_mask.astype(bool).sum())
+        rotation_angle = self._rotation_angle_degrees(R)
         
         return {
             'R': R,
@@ -247,7 +276,9 @@ class PoseEstimator:
             'inlier_mask': final_inliers,
             'num_inliers': np.sum(final_inliers),
             'inlier_ratio': np.sum(final_inliers) / len(points1),
-            'success': True
+            'success': True,
+            'positive_depth_count': positive_count,
+            'rotation_angle_deg': rotation_angle
         }
     
     def estimate_pose_pnp(self,
@@ -454,6 +485,16 @@ class PoseEstimator:
                 continue
         
         return mask
+
+    @staticmethod
+    def _rotation_angle_degrees(R: np.ndarray) -> float:
+        """Compute absolute rotation angle of matrix R in degrees."""
+        try:
+            value = (np.trace(R) - 1.0) / 2.0
+            value = np.clip(value, -1.0, 1.0)
+            return float(np.degrees(np.arccos(value)))
+        except Exception:
+            return 0.0
     
     def _essential_to_fundamental(self,
                                 E: np.ndarray,

@@ -1,0 +1,35 @@
+# Multi-object scene configuration for complex synthetic data generation
+
+# Scene configuration
+scene:
+  type: "multi_object"
+  size: 3.0
+  position: [0.0, 0.0, 0.0]
+  texture_type: "checkerboard"
+  texture_scale: 0.1  # Fine texture for detailed features
+
+# Camera trajectory configuration
+cameras:
+  trajectory: "random"  # Random viewpoints for complex scenes
+  num_cameras: 12
+  radius: 5.0
+  height: 0.0
+  look_at: [0.0, 0.0, 0.0]
+
+  # Camera intrinsics
+  intrinsics:
+    focal_length: 800.0
+    image_size: [800, 600]  # Higher resolution for complex scenes
+    principal_point: [400.0, 300.0]
+
+# Rendering configuration
+rendering:
+  lighting: "uniform"
+  background: "checkerboard"
+  noise_level: 0.05  # Small amount of noise for realism
+  anti_aliasing: true
+
+# Output configuration
+output:
+  dataset_name: "multi_object"
+  base_path: "data/synthetic"

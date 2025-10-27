@@ -1,0 +1,37 @@
+# Simple cube scene configuration for synthetic data generation
+
+# Scene configuration
+scene:
+  type: "cube"
+  size: 2.0
+  position: [0.0, 0.0, 0.0]
+  texture_type: "checkerboard"
+  texture_scale: 0.2  # Larger squares for better feature detection
+  texture_jitter: 0.05  # Break symmetry for more distinctive features
+  interior_points: 128  # Add volumetric features for stronger 3D geometry
+
+# Camera trajectory configuration
+cameras:
+  trajectory: "circular"
+  num_cameras: 8
+  radius: 4.0
+  height: 0.5  # Slightly elevated view
+  look_at: [0.0, 0.0, 0.0]
+
+  # Camera intrinsics
+  intrinsics:
+    focal_length: 800.0
+    image_size: [640, 480]
+    principal_point: [320.0, 240.0]
+
+# Rendering configuration
+rendering:
+  lighting: "uniform"
+  background: "black"
+  noise_level: 0.0  # No noise for initial testing
+  anti_aliasing: true
+
+# Output configuration
+output:
+  dataset_name: "simple_cube"
+  base_path: "data/synthetic"

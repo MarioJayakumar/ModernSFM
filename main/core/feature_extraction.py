@@ -128,12 +128,15 @@ class FeatureExtractor:
         all_keypoints = []
         all_descriptors = []
         all_scores = []
-        original_size = image.shape[-2:]
+        height, width = image.shape[-2], image.shape[-1]
+        original_size = np.array([width, height], dtype=np.float32)
         
         for scale in self.scales:
             if scale != 1.0:
                 # Resize image for this scale
-                new_size = (int(original_size[0] * scale), int(original_size[1] * scale))
+                new_height = max(1, int(round(height * scale)))
+                new_width = max(1, int(round(width * scale)))
+                new_size = (new_height, new_width)
                 scaled_image = torch.nn.functional.interpolate(
                     image.unsqueeze(0), size=new_size, mode='bilinear', align_corners=False
                 ).squeeze(0)
@@ -231,9 +234,24 @@ class FeatureExtractor:
         if len(keypoints) == 0 or self.spatial_grid <= 0:
             return keypoints, descriptors, scores
         
-        h, w = image_size
-        grid_h = h / self.spatial_grid  # Use float division for more precise boundaries
-        grid_w = w / self.spatial_grid
+        if isinstance(image_size, tuple):
+            width, height = map(float, image_size)
+        elif isinstance(image_size, list):
+            width = float(image_size[0])
+            height = float(image_size[1] if len(image_size) > 1 else image_size[0])
+        elif isinstance(image_size, np.ndarray):
+            width = float(image_size[0])
+            height = float(image_size[1] if image_size.size > 1 else image_size[0])
+        elif hasattr(image_size, "__iter__"):
+            seq = list(image_size)
+            width = float(seq[0])
+            height = float(seq[1] if len(seq) > 1 else seq[0])
+        else:
+            width = float(image_size)
+            height = float(image_size)
+
+        grid_h = height / self.spatial_grid  # Use float division for more precise boundaries
+        grid_w = width / self.spatial_grid
         
         selected_indices = []
         empty_cells = []
@@ -345,13 +363,14 @@ class FeatureExtractor:
             keypoints = batch_features['keypoints'][0].cpu().numpy()
             descriptors = batch_features['descriptors'][0].cpu().numpy()
             scores = batch_features['keypoint_scores'][0].cpu().numpy()
-            
+            height, width = image.shape[-2], image.shape[-1]
+
             features = {
                 'keypoints': keypoints,
                 'descriptors': descriptors,
                 'scores': scores,
                 'image_path': str(image_path),
-                'image_size': image.shape[-2:],
+                'image_size': np.array([width, height], dtype=np.float32),
                 'num_features': len(keypoints),
                 'extractor_type': 'superpoint'
             }

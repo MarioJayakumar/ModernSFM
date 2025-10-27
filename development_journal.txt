@@ -404,3 +404,136 @@ outputs/reconstruction_name_YYYY-MM-DD_HH-MM-SS/
 3. Add conditional intermediate file generation
 4. Consolidate visualization file management
 5. Update all pipeline components for consistent naming
+
+## October 23rd, 2024
+
+**Synthetic Ground Truth Data Generation System Complete**
+
+Successfully implemented a comprehensive synthetic dataset generation system to enable systematic evaluation of the SfM pipeline with perfect ground truth data. This addresses the critical need for debugging pipeline inefficiencies that are difficult to identify with noisy real-world data.
+
+### Architecture Implemented:
+
+#### **Core Module Structure (`main/synthetic/`)**:
+- **ground_truth.py**: Data structures for storing perfect ground truth (3D points, camera poses, correspondences)
+- **scene_generator.py**: Generate geometric primitives (cubes, textured planes, multi-object scenes)
+- **camera_generator.py**: Generate camera trajectories (circular, linear, arc, random) with known poses
+- **renderer.py**: Synthetic image rendering with 2D-3D correspondence tracking
+- **evaluation.py**: Comprehensive metrics comparing reconstruction results to ground truth
+
+#### **Configuration System (`config/synthetic/`)**:
+- **simple_cube.yaml**: 8 cameras, circular trajectory, checkerboard cube - basic pipeline validation
+- **textured_plane.yaml**: 6 cameras, arc trajectory, dense texture grid - planar scene testing
+- **multi_object.yaml**: 12 cameras, random positions, complex scenes - advanced reconstruction testing
+
+#### **Standalone Scripts**:
+- **generate_synthetic_data.py**: Dataset generation from config files
+- **test_synthetic_reconstruction.py**: Ground truth evaluation with detailed metrics
+
+### Key Implementation Details:
+
+#### **Clean Workflow Separation**:
+1. **Dataset Generation**: `python -m scripts.generate_synthetic_data --config config/synthetic/simple_cube.yaml`
+2. **Standard Reconstruction**: `python -m scripts.run_reconstruction --input data/synthetic/cube_TIMESTAMP/images/`
+3. **Ground Truth Evaluation**: `python -m scripts.test_synthetic_reconstruction --ground_truth data/synthetic/cube_TIMESTAMP/ground_truth.json --reconstruction outputs/reconstruction_TIMESTAMP/`
+
+#### **Perfect Ground Truth Data**:
+- **3D Scene**: Exact world coordinates of all reconstructible points (cube vertices + texture grid points)
+- **Camera Poses**: Precise rotation matrices and translation vectors for each viewpoint
+- **2D-3D Correspondences**: Pixel-perfect mapping between image points and 3D world points
+- **Visibility Matrices**: Which 3D points are visible in which camera images
+
+#### **Comprehensive Evaluation Metrics**:
+- **Pose Estimation**: Rotation error (degrees), translation error (Euclidean distance)
+- **Triangulation**: 3D distance from ground truth, match ratio, precision/completeness
+- **Bundle Adjustment**: Convergence analysis, error reduction, optimization behavior
+
+#### **Dataset Output Structure**:
+```
+data/synthetic/simple_cube_20241023_143022/
+├── images/                    # Synthetic images (camera_000.png, ...)
+├── ground_truth.json          # Complete ground truth data
+├── scene_config.yaml          # Copy of generation config
+└── projection_visualization.png  # Debug visualization
+```
+
+### Architecture Benefits:
+
+#### **Systematic Pipeline Debugging**:
+- **Component-level isolation**: Evaluate feature extraction, matching, pose estimation, triangulation, and bundle adjustment independently
+- **Perfect baseline**: No measurement errors, calibration uncertainty, or real-world noise
+- **Quantitative assessment**: Precise metrics for each pipeline stage
+- **Parameter optimization**: Data-driven tuning of thresholds and algorithms
+
+#### **Controlled Testing Environment**:
+- **Reproducible results**: Identical synthetic data for consistent parameter testing
+- **Gradual complexity**: Simple cube → textured plane → multi-object progression
+- **Known failure modes**: Systematic identification of pipeline limitations
+- **Bottleneck identification**: Pinpoint exactly which components contribute most error
+
+#### **Integration with Existing Pipeline**:
+- **Zero modifications required**: Synthetic datasets work with existing reconstruction code
+- **Standard workflow**: Generated images processed like any real dataset
+- **Post-hoc evaluation**: Compare results against ground truth after reconstruction
+- **Project conventions**: Uses `python -m scripts.script_name` execution pattern
+
+### Evaluation Capabilities:
+
+#### **Pose Estimation Analysis**:
+- Rotation accuracy (degrees difference from ground truth)
+- Translation accuracy (3D distance from ground truth)
+- Per-camera breakdown and overall statistics
+- Geometric validation of estimated camera poses
+
+#### **Triangulation Quality Assessment**:
+- 3D point distance errors from perfect ground truth positions
+- Match ratio: percentage of ground truth points successfully reconstructed
+- Precision: accuracy of reconstructed points
+- Completeness: coverage of ground truth structure
+
+#### **Bundle Adjustment Performance**:
+- Convergence behavior and iteration analysis
+- Error reduction measurement (initial vs final)
+- Quality improvement assessment
+- Optimization algorithm effectiveness
+
+### Future Workflow Integration:
+
+This synthetic data system enables:
+
+1. **Rapid prototyping**: Test algorithm changes with immediate ground truth feedback
+2. **Parameter optimization**: Systematic tuning of feature extraction, matching, and bundle adjustment parameters
+3. **Quality validation**: Quantitative assessment of pipeline improvements
+4. **Failure analysis**: Understand exactly when and why reconstruction fails
+5. **Performance benchmarking**: Compare different algorithms against identical test scenarios
+
+### Technical Implementation Notes:
+
+- **Efficient rendering**: GPU-accelerated synthetic image generation with proper 2D-3D correspondence tracking
+- **Robust evaluation**: Automatic point cloud alignment and correspondence finding for fair comparison
+- **Comprehensive reporting**: Detailed JSON output with per-component metrics and overall assessment
+- **Visualization support**: Debug visualizations for camera poses and 3D scene structure
+
+The synthetic data generation system provides a solid foundation for systematic SfM pipeline evaluation and optimization. It bridges the gap between theoretical algorithm development and practical performance assessment by providing perfect ground truth data for quantitative analysis. This enables data-driven optimization of each pipeline component and systematic identification of bottlenecks that are difficult to detect with real-world noisy data.
+
+**Next Steps**: Use synthetic datasets to evaluate current pipeline performance, identify the largest sources of error, and systematically optimize parameters for each component based on quantitative ground truth feedback.
+
+## October 25th, 2025
+
+- TODO 1 (completed): Update synthetic evaluator to read reconstruction artifacts from both the root output directory and its `data/` subfolder, surfacing a clear message when expected files are missing.
+  - `_load_reconstruction_results` now searches both locations with explicit warnings; CLI validation mirrors this by discovering artifacts in either spot and logging missing paths with context.
+- TODO 2 (completed): Normalize reconstructed pose data (list indexed by camera id with `R`/`t`) so it aligns with ground-truth camera naming before computing pose error metrics.
+  - Added normalization logic in `SyntheticEvaluator._load_reconstruction_results` so `camera_poses.json` entries convert into a `{camera_name: pose}` map with consistent `rotation_matrix`/`translation` keys using the ground-truth naming.
+- TODO 3: Address reconstruction failure modes surfaced by the synthetic evaluation (pose flip, 0 triangulated matches) and produce a pipeline run with valid correspondences.
+- TODO 4: Ensure bundle adjustment artifacts (`bundle_adjustment_results.json`) are emitted so diagnostics can be ingested during evaluation.
+- TODO 5: Pull bundle adjustment diagnostics from the `reconstruction_report.json` payload and integrate them into evaluation summaries.
+- TODO 6: Improve point-cloud alignment by estimating scale during Procrustes and adapt correspondence thresholds to the scene bounds to avoid false negatives from global scale drift.
+- TODO 7: Enrich evaluation summaries with per-stage diagnostics (pose fallbacks, triangulation coverage, BA convergence/inlier ratio) once metrics load correctly.
+
+## October 26th, 2025
+
+- Investigated the persistent synthetic evaluation failures now that results logger prints the resolved ground-truth/reconstruction paths.
+- Discovered LightGlue was receiving image sizes in `(height, width)` order, which skewed the keypoint scaling. Fixed `FeatureExtractor.extract_features_single` and the multi-scale path to emit `[width, height]` consistently so matches line up with the intrinsics.
+- Added solver diagnostics to `PoseEstimator` and modified `estimate_two_view_geometry` to consider both COLMAP and OpenCV results, preferring the candidate with higher rotation magnitude when inlier counts are comparable.
+- Guarded `match_features` against overly aggressive geometric pruning by falling back to the raw LightGlue matches if filtering drops a pair below a reasonable threshold; this keeps enough correspondences for pose estimation to work with.
+- Current status: feature extraction is stable and match counts look healthy, but COLMAP is still returning near-identity rotations (~3–4°) for adjacent synthetic views where we expect ~45°. OpenCV does slightly better yet still under-rotates, so the incremental pipeline builds an almost planar camera ring and triangulation collapses (match ratio 0.0).
+- Next diagnostics: verify coordinate handedness and normalization passed to COLMAP/`recoverPose`, inspect relative rotations directly against ground truth, and confirm LightGlue match coordinates align with the synthetic camera intrinsics.

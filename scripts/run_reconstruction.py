@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_output_directory(base_dir: str, name: str = None) -> Tuple[Path, Path, Path, Path]:
+def create_output_directory(base_dir: str, name: str = "") -> Tuple[Path, Path, Path, Path]:
     """
     Create organized output directory structure.
     

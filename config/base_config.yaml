@@ -25,7 +25,7 @@ feature_extractor:
 # Feature matching
 feature_matching:
   matcher_type: "lightglue"  # Options: lightglue, loftr, superglue
-  match_threshold: 0.30  # Balanced threshold for quality vs quantity
+  match_threshold: 0.10  # Lower threshold to increase correspondences on synthetic data
   max_matches: 3000  # More matches for better coverage
   cross_check: true
   # Enhanced filtering parameters
@@ -36,6 +36,8 @@ feature_matching:
 # Pose estimation
 pose_estimation:
   method: "colmap"  # Options: colmap, essential_matrix, pnp
+  max_pair_gap: 2  # Prefer near-neighbor pairs for incremental reconstruction
+  min_inliers: 5  # Require sufficient inliers before accepting a relative pose
   ransac:
     confidence: 0.9999
     max_iterations: 10000
@@ -64,6 +66,7 @@ reconstruction:
   max_reprojection_error: 8.0   # pixels - increased for better coverage
   min_track_length: 2
   max_track_length: 50
+  max_track_pair_gap: null  # Use all reliable matches when building tracks
 
 # Visualization
 visualization:

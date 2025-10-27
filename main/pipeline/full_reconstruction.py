@@ -222,7 +222,34 @@ class FullReconstructionPipeline:
         
         try:
             # Match all pairs using the FeatureMatcher
-            self.matches = self.feature_matcher.match_all_pairs(self.features)
+            raw_matches = self.feature_matcher.match_all_pairs(self.features)
+
+            min_inliers_for_pose = getattr(self.config.pose_estimation, 'min_inliers', 0)
+            fallback_threshold = max(30, 2 * max(8, min_inliers_for_pose)) if min_inliers_for_pose else 30
+
+            # Apply geometric filtering to suppress outliers from ambiguous pairs
+            self.matches = {}
+            for pair, match_data in raw_matches.items():
+                if match_data is None or 'matches' not in match_data or len(match_data['matches']) < 8:
+                    self.matches[pair] = match_data
+                    continue
+
+                try:
+                    filtered = self.feature_matcher.filter_matches(match_data, method="fundamental")
+                    filtered_matches = filtered.get('num_matches', len(filtered.get('matches', [])))
+                    original_matches = match_data.get('num_matches', len(match_data.get('matches', [])))
+
+                    if filtered_matches >= fallback_threshold or filtered_matches >= original_matches * 0.5:
+                        self.matches[pair] = filtered
+                    else:
+                        logger.debug(
+                            "Filtered matches for pair %s dropped to %d (from %d); retaining original matches",
+                            pair, filtered_matches, original_matches
+                        )
+                        self.matches[pair] = match_data
+                except Exception as filter_error:
+                    logger.warning(f"Geometric filtering failed for pair {pair}: {filter_error}")
+                    self.matches[pair] = match_data
             
             # Validate and log results
             num_matches = {}
@@ -234,8 +261,9 @@ class FullReconstructionPipeline:
                     logger.warning(f"No matches found for pair {pair}")
                     num_matches[pair] = 0
                     continue
-                    
-                num_matches[pair] = len(match_data['matches'])
+
+                match_count = match_data.get('num_matches', len(match_data['matches']))
+                num_matches[pair] = match_count
                 total_matches += num_matches[pair]
                 if num_matches[pair] > 0:
                     valid_pairs += 1
@@ -283,18 +311,21 @@ class FullReconstructionPipeline:
         try:
             # Build pose estimation graph from matches
             pose_pairs = []
+            max_pair_gap = getattr(self.config.pose_estimation, 'max_pair_gap', None)
+            min_inliers = getattr(self.config.pose_estimation, 'min_inliers', 0)
+
             for pair, match_data in self.matches.items():
                 if match_data is None or 'matches' not in match_data or len(match_data['matches']) == 0:
                     continue
-                
+
                 i, j = pair
-                matches = match_data['matches']
-                
-                # Get matched keypoints
-                kpts1 = self.features[i]['keypoints'][matches[:, 0]]
-                kpts2 = self.features[j]['keypoints'][matches[:, 1]]
-                
-                pose_pairs.append((i, j, kpts1, kpts2))
+                if max_pair_gap is not None and abs(i - j) > max_pair_gap:
+                    continue
+
+                if match_data['matches'].shape[0] < max(8, min_inliers):
+                    continue
+
+                pose_pairs.append((i, j, match_data))
             
             if len(pose_pairs) == 0:
                 raise RuntimeError("No valid matches found for pose estimation")
@@ -320,7 +351,11 @@ class FullReconstructionPipeline:
                 progress_made = False
                 iteration += 1
                 
-                for i, j, kpts1, kpts2 in pose_pairs:
+                for i, j, match_data in pose_pairs:
+                    matches = match_data['matches']
+                    kpts1 = self.features[i]['keypoints'][matches[:, 0]]
+                    kpts2 = self.features[j]['keypoints'][matches[:, 1]]
+
                     # Skip if both cameras already estimated
                     if i in estimated_cameras and j in estimated_cameras:
                         continue
@@ -328,13 +363,24 @@ class FullReconstructionPipeline:
                     # Estimate relative pose
                     try:
                         intrinsics = self.get_default_intrinsics()
-                        result = self.pose_estimator.estimate_two_view_geometry(
-                            kpts1, kpts2, intrinsics, intrinsics
-                        )
+                        result = match_data.get('pose_estimation')
+                        if result is None:
+                            result = self.pose_estimator.estimate_two_view_geometry(
+                                kpts1, kpts2, intrinsics, intrinsics
+                            )
+                            match_data['pose_estimation'] = result
                         
-                        if not result['success']:
+                        if not result['success'] or result['num_inliers'] < min_inliers:
                             continue
                         
+                        inliers = result['inlier_mask']
+                        if inliers is not None and inliers.shape[0] == matches.shape[0]:
+                            matches = matches[inliers]
+                            kpts1 = kpts1[inliers]
+                            kpts2 = kpts2[inliers]
+                        elif result['num_inliers'] < min_inliers:
+                            continue
+
                         R_rel = result['R']
                         t_rel = result['t']
                         
@@ -373,14 +419,12 @@ class FullReconstructionPipeline:
                     logger.warning(f"No progress in pose estimation iteration {iteration}")
                     break
             
-            # Fill remaining poses with identity (fallback)
-            for i in range(num_cameras):
-                if self.poses[i] is None:
-                    logger.warning(f"Could not estimate pose for camera {i}, using identity")
-                    self.poses[i] = {
-                        'R': np.eye(3),
-                        't': np.zeros((3, 1))
-                    }
+            unresolved = [idx for idx in range(num_cameras) if self.poses[idx] is None]
+            if unresolved:
+                raise RuntimeError(
+                    f"Could not estimate poses for cameras {unresolved}; "
+                    "insufficient high-quality two-view geometry."
+                )
             
             pose_time = time.time() - start_time
             logger.info(f"Pose estimation completed in {pose_time:.2f}s")
@@ -418,8 +462,17 @@ class FullReconstructionPipeline:
             logger.info("Building multi-view tracks for improved triangulation")
             
             # Build comprehensive tracks from all pairwise matches
+            max_track_gap = getattr(self.config.reconstruction, 'max_track_pair_gap', None)
+            filtered_matches = {}
+            for pair, data in self.matches.items():
+                if not (data and 'matches' in data):
+                    continue
+                if max_track_gap is not None and abs(pair[0] - pair[1]) > max_track_gap:
+                    continue
+                filtered_matches[pair] = data['matches']
+
             tracks = self.triangulator.create_tracks(
-                {pair: data['matches'] for pair, data in self.matches.items() if data and 'matches' in data}, 
+                filtered_matches,
                 len(self.images)
             )
             
