@@ -309,6 +309,7 @@ class FullReconstructionPipeline:
         start_time = time.time()
         
         try:
+            min_rotation_deg = getattr(self.config.pose_estimation, 'min_rotation_deg', 0.0)
             # Build pose estimation graph from matches
             pose_pairs = []
             max_pair_gap = getattr(self.config.pose_estimation, 'max_pair_gap', None)
@@ -324,8 +325,38 @@ class FullReconstructionPipeline:
 
                 if match_data['matches'].shape[0] < max(8, min_inliers):
                     continue
+                
+                matches = match_data['matches']
+                kpts1 = self.features[i]['keypoints'][matches[:, 0]]
+                kpts2 = self.features[j]['keypoints'][matches[:, 1]]
+
+                intrinsics = self.get_default_intrinsics()
+                result = match_data.get('pose_estimation')
+                if result is None:
+                    result = self.pose_estimator.estimate_two_view_geometry(
+                        kpts1, kpts2, intrinsics, intrinsics
+                    )
+                    match_data['pose_estimation'] = result
+
+                if not result.get('success'):
+                    continue
+                if result.get('num_inliers', 0) < min_inliers:
+                    continue
+
+                rotation_angle = result.get('rotation_angle_deg', 0.0)
+                match_data['rotation_angle_deg'] = rotation_angle
+
+                if rotation_angle < min_rotation_deg:
+                    logger.debug(
+                        "Skipping pair (%d, %d) due to low rotation angle %.2f° (< %.2f°)",
+                        i, j, rotation_angle, min_rotation_deg
+                    )
+                    continue
 
                 pose_pairs.append((i, j, match_data))
+            
+            # Prioritize wide-baseline pairs
+            pose_pairs.sort(key=lambda item: item[2].get('rotation_angle_deg', 0.0), reverse=True)
             
             if len(pose_pairs) == 0:
                 raise RuntimeError("No valid matches found for pose estimation")
@@ -352,10 +383,6 @@ class FullReconstructionPipeline:
                 iteration += 1
                 
                 for i, j, match_data in pose_pairs:
-                    matches = match_data['matches']
-                    kpts1 = self.features[i]['keypoints'][matches[:, 0]]
-                    kpts2 = self.features[j]['keypoints'][matches[:, 1]]
-
                     # Skip if both cameras already estimated
                     if i in estimated_cameras and j in estimated_cameras:
                         continue
@@ -450,8 +477,18 @@ class FullReconstructionPipeline:
         start_time = time.time()
         
         try:
-            # Get default intrinsics
-            self.intrinsics = self.get_default_intrinsics()
+            # Get default intrinsics (allow override via config)
+            override_path = getattr(self.config.reconstruction, 'camera_intrinsics_override', None)
+            if override_path:
+                intrinsics_path = Path(override_path)
+                if not intrinsics_path.exists():
+                    raise ValueError(f"Intrinsics override file not found: {intrinsics_path}")
+                with intrinsics_path.open("r") as fh:
+                    data = json.load(fh)
+                self.intrinsics = np.array(data["intrinsics"], dtype=np.float64)
+                logger.info(f"Loaded camera intrinsics override from {intrinsics_path}")
+            else:
+                self.intrinsics = self.get_default_intrinsics()
             
             # Build observations dictionary for multi-view triangulation
             # Track correspondences across views

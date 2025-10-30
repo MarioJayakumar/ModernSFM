@@ -94,6 +94,11 @@ class PoseEstimator:
         
         # Determine method to use
         use_method = method or self.preferred_method
+        min_rotation = float(self.pose_config.get('min_rotation_deg', 0.0))
+        min_parallax = float(self.pose_config.get('min_parallax_deg', 0.0))
+        parallax_deg = self._estimate_parallax(points1, points2)
+        if parallax_deg is not None:
+            logging.debug("Estimated parallax for pair: %.2f°", parallax_deg)
         
         # Try COLMAP first if available and requested
         if use_method == 'colmap' and COLMAP_AVAILABLE:
@@ -126,7 +131,24 @@ class PoseEstimator:
         except Exception as e:
             logging.error(f"OpenCV pose estimation failed: {e}")
 
-        if candidate_results:
+        filtered_candidates = candidate_results
+        if candidate_results and (min_rotation > 0.0 or min_parallax > 0.0):
+            filtered_candidates = []
+            for res in candidate_results:
+                rot_ok = res.get('rotation_angle_deg', 0.0) >= min_rotation
+                parallax_ok = parallax_deg is None or parallax_deg >= min_parallax
+                if rot_ok and parallax_ok:
+                    filtered_candidates.append(res)
+
+            if not filtered_candidates and candidate_results:
+                logging.debug(
+                    "All pose candidates rejected by rotation/parallax thresholds (min_rot=%.2f°, min_parallax=%.2f°); keeping best available.",
+                    min_rotation,
+                    min_parallax
+                )
+                filtered_candidates = candidate_results
+
+        if filtered_candidates:
             def _score(result: Dict) -> Tuple[float, int, int]:
                 return (
                     result.get('rotation_angle_deg', 0.0),
@@ -134,7 +156,7 @@ class PoseEstimator:
                     result.get('num_inliers', 0)
                 )
             
-            best = max(candidate_results, key=_score)
+            best = max(filtered_candidates, key=_score)
             return best
         
         logging.error("All pose estimation methods failed")
@@ -485,6 +507,25 @@ class PoseEstimator:
                 continue
         
         return mask
+
+    def _estimate_parallax(self, points1: np.ndarray, points2: np.ndarray) -> Optional[float]:
+        """Estimate parallax between two sets of pixel coordinates in degrees."""
+        if len(points1) == 0 or len(points2) == 0:
+            return None
+        centroid1 = points1.mean(axis=0)
+        centroid2 = points2.mean(axis=0)
+        vectors1 = points1 - centroid1
+        vectors2 = points2 - centroid2
+        norms1 = np.linalg.norm(vectors1, axis=1)
+        norms2 = np.linalg.norm(vectors2, axis=1)
+        valid = (norms1 > 1e-6) & (norms2 > 1e-6)
+        if not np.any(valid):
+            return None
+        vectors1 = vectors1[valid] / norms1[valid, None]
+        vectors2 = vectors2[valid] / norms2[valid, None]
+        dots = np.clip(np.sum(vectors1 * vectors2, axis=1), -1.0, 1.0)
+        angles = np.degrees(np.arccos(dots))
+        return float(np.median(angles)) if len(angles) else None
 
     @staticmethod
     def _rotation_angle_degrees(R: np.ndarray) -> float:

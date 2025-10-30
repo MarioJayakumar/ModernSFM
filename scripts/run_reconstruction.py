@@ -15,9 +15,16 @@ from pathlib import Path
 import logging
 import os
 import json
+import tempfile
 from datetime import datetime
 from typing import Tuple
 from omegaconf import OmegaConf
+
+# Ensure a usable temporary directory (torchvision sometimes needs one during import)
+tmp_root = Path(os.environ.get("TMPDIR", ".tmp"))
+tmp_root.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("TMPDIR", str(tmp_root.resolve()))
+tempfile.tempdir = str(tmp_root.resolve())
 
 # Add the main directory to the path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -244,6 +251,8 @@ Examples:
                        help='Generate intermediate visualizations (features, matches, triangulation)')
     parser.add_argument('--max-images', type=int, default=None,
                        help='Limit number of input images (for testing)')
+    parser.add_argument('--intrinsics', type=str, default=None,
+                       help='Path to a JSON file containing camera intrinsics to override defaults')
     
     args = parser.parse_args()
     
@@ -289,6 +298,11 @@ Examples:
     # Override device if specified
     if args.device != 'auto':
         cfg.device = args.device
+
+    # Override camera intrinsics if provided
+    if args.intrinsics:
+        cfg.reconstruction.camera_intrinsics_override = args.intrinsics
+        logger.info(f"Using intrinsics override: {args.intrinsics}")
     
     logger.info(f"Using quality preset: {args.quality}")
     logger.info(f"Using device: {cfg.device}")

@@ -38,6 +38,8 @@ pose_estimation:
   method: "colmap"  # Options: colmap, essential_matrix, pnp
   max_pair_gap: 2  # Prefer near-neighbor pairs for incremental reconstruction
   min_inliers: 5  # Require sufficient inliers before accepting a relative pose
+  min_rotation_deg: 0.0
+  min_parallax_deg: 0.0
   ransac:
     confidence: 0.9999
     max_iterations: 10000
@@ -67,6 +69,7 @@ reconstruction:
   min_track_length: 2
   max_track_length: 50
   max_track_pair_gap: null  # Use all reliable matches when building tracks
+  camera_intrinsics_override: null  # Optional path to intrinsics JSON
 
 # Visualization
 visualization:
