@@ -190,13 +190,14 @@ class FullReconstructionPipeline:
             
             # Generate intermediate visualizations only if intermediate_dir is provided
             if self.intermediate_dir:
-                self.intermediate_dir.mkdir(exist_ok=True)
+                self.intermediate_dir.mkdir(parents=True, exist_ok=True)
                 features_dir = self.intermediate_dir / "features"
-                features_dir.mkdir(exist_ok=True)
+                features_dir.mkdir(parents=True, exist_ok=True)
                 self.pipeline_visualizer.visualize_pipeline_stage(
                     "features", 
                     images=self.images, 
                     features_list=self.features,
+                    output_dir=features_dir,
                     max_images=3,
                     max_keypoints=2000
                 )
@@ -280,12 +281,13 @@ class FullReconstructionPipeline:
             # Generate intermediate visualizations only if intermediate_dir is provided
             if self.intermediate_dir:
                 matches_dir = self.intermediate_dir / "matches"
-                matches_dir.mkdir(exist_ok=True)
+                matches_dir.mkdir(parents=True, exist_ok=True)
                 self.pipeline_visualizer.visualize_pipeline_stage(
                     "matches",
                     images=self.images,
                     features_list=self.features, 
                     matches_dict=self.matches,
+                    output_dir=matches_dir,
                     max_pairs=5
                 )
             
@@ -601,10 +603,13 @@ class FullReconstructionPipeline:
             
             # Generate intermediate visualizations only if intermediate_dir is provided
             if self.intermediate_dir:
+                triangulation_dir = self.intermediate_dir / "triangulation"
+                triangulation_dir.mkdir(parents=True, exist_ok=True)
                 self.pipeline_visualizer.visualize_pipeline_stage(
                     "triangulation",
                     points_3d=self.points_3d,
-                    camera_poses=self.poses
+                    camera_poses=self.poses,
+                    output_dir=triangulation_dir
                 )
             
             return self.points_3d
@@ -634,7 +639,12 @@ class FullReconstructionPipeline:
             logger.info(f"Using {len(self.track_observations)} real observations from triangulation")
             
             # Run bundle adjustment
-            intrinsics = self.get_default_intrinsics()
+            if getattr(self, "intrinsics", None) is not None:
+                intrinsics = np.array(self.intrinsics, dtype=np.float64)
+                logger.info("Bundle adjustment using stored intrinsics:\n%s", intrinsics)
+            else:
+                intrinsics = self.get_default_intrinsics()
+                logger.info("Bundle adjustment falling back to default intrinsics:\n%s", intrinsics)
             ba_result = self.bundle_adjuster.optimize_reconstruction(
                 np.array(self.points_3d), self.poses, intrinsics, self.track_observations
             )
@@ -718,6 +728,20 @@ class FullReconstructionPipeline:
                     json.dump(poses_data, f, indent=2)
                 output_files.append(poses_json)
             
+            # Persist bundle adjustment observations for diagnostics
+            if getattr(self, 'track_observations', None):
+                obs_json = data_output_dir / "track_observations.json"
+                serializable = []
+                for obs in self.track_observations:
+                    serializable.append({
+                        'camera_id': int(obs['camera_id']),
+                        'point_id': int(obs['point_id']),
+                        'point_2d': [float(obs['point_2d'][0]), float(obs['point_2d'][1])]
+                    })
+                with open(obs_json, 'w') as f:
+                    json.dump(serializable, f, indent=2)
+                output_files.append(obs_json)
+            
             # Save intrinsics in data directory
             if self.intrinsics is not None:
                 intrinsics_json = data_output_dir / "camera_intrinsics.json"
@@ -776,11 +800,16 @@ class FullReconstructionPipeline:
                         camera_poses_dict[i] = np.hstack([pose['R'], pose['t']])
                 
                 # Create visualization using the correct format  
-                vis_files = self.visualizer.visualize_reconstruction(
+                self.visualizer.set_output_dir(vis_output_dir)
+                generated = self.visualizer.visualize_reconstruction(
                     triangulation_result,
                     camera_poses_dict,
                     title="reconstruction"  # Use consistent naming
                 )
+                if isinstance(generated, (list, tuple)):
+                    vis_files = [Path(path) for path in generated if path]
+                elif isinstance(generated, str) and generated:
+                    vis_files = [Path(generated)]
                 
                 logger.info(f"Created {len(vis_files)} visualization files")
             
@@ -833,7 +862,9 @@ class FullReconstructionPipeline:
         stage_times = {}
         
         # Store intermediate directory for conditional use
-        self.intermediate_dir = intermediate_dir
+        self.intermediate_dir = Path(intermediate_dir) if intermediate_dir else None
+        if self.intermediate_dir:
+            self.intermediate_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             # Stage 1: Load images

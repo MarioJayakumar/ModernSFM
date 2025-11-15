@@ -34,7 +34,7 @@ class PipelineVisualizer:
     def visualize_feature_extraction(self, 
                                    images: List[Path], 
                                    features_list: List[Dict],
-                                   output_dir: str = "outputs",
+                                   output_dir: Union[str, Path] = "outputs",
                                    max_images: int = 3,
                                    max_keypoints: int = 2000) -> List[Path]:
         """
@@ -55,6 +55,8 @@ class PipelineVisualizer:
             return []
             
         output_paths = []
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             logger.info("Generating feature extraction visualizations...")
@@ -68,13 +70,13 @@ class PipelineVisualizer:
                 
                 if features and 'keypoints' in features:
                     # Use the feature extractor's existing method
-                    output_path = f"{output_dir}/features_image_{i+1}.jpg"
+                    output_path = output_dir / f"features_image_{i+1}.jpg"
                     
                     self.feature_extractor.visualize_features(
-                        image_path, features, output_path
+                        image_path, features, str(output_path)
                     )
                     
-                    output_paths.append(Path(output_path))
+                    output_paths.append(output_path)
                     logger.info(f"Generated feature visualization: {output_path}")
                     
         except Exception as e:
@@ -86,7 +88,7 @@ class PipelineVisualizer:
                                  images: List[Path],
                                  features_list: List[Dict], 
                                  matches_dict: Dict[Tuple[int, int], Dict],
-                                 output_dir: str = "outputs",
+                                 output_dir: Union[str, Path] = "outputs",
                                  max_pairs: int = 5) -> List[Path]:
         """
         Generate feature matching visualizations using the component's method.
@@ -106,6 +108,8 @@ class PipelineVisualizer:
             return []
             
         output_paths = []
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             logger.info("Generating feature matching visualizations...")
@@ -129,14 +133,14 @@ class PipelineVisualizer:
             for i, j, match_data in pairs_to_visualize:
                 try:
                     # Use the feature matcher's existing method
-                    output_path = f"{output_dir}/matches_pair_{i+1}_{j+1}.jpg"
+                    output_path = output_dir / f"matches_pair_{i+1}_{j+1}.jpg"
                     
                     self.feature_matcher.visualize_matches(
                         str(images[i]), str(images[j]),
-                        match_data, output_path
+                        match_data, str(output_path)
                     )
                     
-                    output_paths.append(Path(output_path))
+                    output_paths.append(output_path)
                     logger.info(f"Generated match visualization: {output_path}")
                     
                 except Exception as e:
@@ -152,7 +156,7 @@ class PipelineVisualizer:
                                  points_3d: np.ndarray,
                                  camera_poses: List[Dict],
                                  title: str = "3D Reconstruction",
-                                 output_dir: str = "outputs/visualizations") -> List[Path]:
+                                 output_dir: Optional[Union[str, Path]] = None) -> List[Path]:
         """
         Generate 3D visualization of poses and points using the SfM visualizer.
         
@@ -170,6 +174,8 @@ class PipelineVisualizer:
             return []
             
         output_paths = []
+        if output_dir is not None:
+            self.visualizer.set_output_dir(output_dir)
         
         try:
             logger.info(f"Generating 3D visualization: {title}")
@@ -182,7 +188,7 @@ class PipelineVisualizer:
                     camera_poses_dict[i] = np.hstack([pose['R'], pose['t']])
             
             # Use the SfM visualizer's existing method
-            self.visualizer.visualize_point_cloud(
+            generated = self.visualizer.visualize_point_cloud(
                 points_3d,
                 colors=None,
                 camera_poses=camera_poses_dict,
@@ -190,17 +196,10 @@ class PipelineVisualizer:
                 method="export"
             )
             
-            # The visualizer saves to its default location - record expected paths
-            # (Note: the actual paths depend on the visualizer's internal naming)
-            expected_files = [
-                f"outputs/visualizations/{title.lower().replace(' ', '_')}.ply",
-                f"outputs/visualizations/{title.lower().replace(' ', '_')}.obj", 
-                f"outputs/visualizations/{title.lower().replace(' ', '_')}_viewer.html"
-            ]
-            
-            for file_path in expected_files:
-                if Path(file_path).exists():
-                    output_paths.append(Path(file_path))
+            if isinstance(generated, (list, tuple)):
+                output_paths = [Path(file_path) for file_path in generated if file_path]
+            elif isinstance(generated, str) and generated:
+                output_paths = [Path(generated)]
                     
             logger.info(f"Generated 3D visualization files: {len(output_paths)} files")
             
@@ -216,7 +215,7 @@ class PipelineVisualizer:
                                matches_dict: Dict = None,
                                points_3d: np.ndarray = None,
                                camera_poses: List[Dict] = None,
-                               output_dir: str = "outputs",
+                               output_dir: Union[str, Path] = "outputs",
                                **kwargs) -> List[Path]:
         """
         Unified interface to generate visualizations for any pipeline stage.
@@ -250,7 +249,7 @@ class PipelineVisualizer:
             elif stage in ["triangulation", "bundle_adjustment"] and points_3d is not None and camera_poses:
                 title = "Triangulated Points" if stage == "triangulation" else "Bundle Adjusted Reconstruction"
                 output_paths = self.visualize_poses_and_points(
-                    points_3d, camera_poses, title, **kwargs
+                    points_3d, camera_poses, title, output_dir, **kwargs
                 )
                 
             else:

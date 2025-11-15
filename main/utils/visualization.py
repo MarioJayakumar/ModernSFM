@@ -131,6 +131,12 @@ class SfMVisualizer:
             colors = self._error_to_color(errors)
         
         return self.visualize_point_cloud(points_3d, colors, camera_poses, title, method)
+
+    def set_output_dir(self, output_dir: Union[str, Path]) -> None:
+        """Override the visualization output directory."""
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        self.output_dir = output_path
     
     def _detect_best_method(self) -> str:
         """Auto-detect the best visualization method for current environment."""
